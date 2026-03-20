@@ -282,8 +282,9 @@ type AIOptsType struct {
 	Verbosity     string         `json:"verbosity,omitempty"`     // Text verbosity level (OpenAI Responses API only, ignored by other backends)
 	AIMode        string         `json:"aimode,omitempty"`
 	Capabilities  []string       `json:"capabilities,omitempty"`
-	WaveAIPremium bool           `json:"waveaipremium,omitempty"`
-	ExtraBody     map[string]any `json:"extrabody,omitempty"` // arbitrary extra fields merged into the API request body
+	WaveAIPremium        bool           `json:"waveaipremium,omitempty"`
+	ExtraBody            map[string]any `json:"extrabody,omitempty"` // arbitrary extra fields merged into the API request body
+	SystemPromptOverride string         `json:"systempromptoverride,omitempty"` // user-configured extra system prompt appended after built-in prompt
 }
 
 func (opts AIOptsType) IsWaveProxy() bool {

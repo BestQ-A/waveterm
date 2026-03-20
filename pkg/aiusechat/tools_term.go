@@ -705,3 +705,125 @@ func GetTermSendSignalToolDefinition(tabId string, approvalMode string) uctypes.
 		},
 	}
 }
+
+// --- create_terminal tool ---
+
+type CreateTerminalToolInput struct {
+	Directory string `json:"directory,omitempty"`
+	Command   string `json:"command,omitempty"`
+	Name      string `json:"name,omitempty"`
+}
+
+type CreateTerminalToolOutput struct {
+	WidgetId string `json:"widget_id"`
+	BlockId  string `json:"block_id"`
+	Message  string `json:"message"`
+}
+
+func parseCreateTerminalInput(input any) (*CreateTerminalToolInput, error) {
+	result := &CreateTerminalToolInput{}
+	if input == nil {
+		return result, nil
+	}
+	inputBytes, err := json.Marshal(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal input: %w", err)
+	}
+	if err := json.Unmarshal(inputBytes, result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal input: %w", err)
+	}
+	return result, nil
+}
+
+func GetCreateTerminalToolDefinition(tabId string, approvalMode string) uctypes.ToolDefinition {
+	return uctypes.ToolDefinition{
+		Name:        "create_terminal",
+		DisplayName: "Create Terminal",
+		Description: "Create a new terminal widget in the current tab. Returns the widget_id which can be used with " +
+			"term_send_input, term_get_scrollback, and term_send_signal. Use this to launch CLI agents " +
+			"(claude, codex, gemini, opencode) in separate terminals so they don't interfere with each other.",
+		ToolLogName: "term:create",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"directory": map[string]any{
+					"type":        "string",
+					"description": "Working directory for the new terminal. Defaults to home directory.",
+				},
+				"command": map[string]any{
+					"type":        "string",
+					"description": "Command to run immediately in the new terminal (e.g. 'claude', 'codex', 'gemini'). If empty, opens a shell.",
+				},
+				"name": map[string]any{
+					"type":        "string",
+					"description": "Display name for the terminal widget.",
+				},
+			},
+			"additionalProperties": false,
+		},
+		ToolCallDesc: func(input any, output any, toolUseData *uctypes.UIMessageDataToolUse) string {
+			parsed, _ := parseCreateTerminalInput(input)
+			if parsed != nil && parsed.Command != "" {
+				return fmt.Sprintf("creating terminal running %q", parsed.Command)
+			}
+			return "creating new terminal"
+		},
+		ToolApproval: func(input any) string {
+			if approvalMode == uctypes.ApprovalModeYolo {
+				return ""
+			}
+			return uctypes.ApprovalNeedsApproval
+		},
+		ToolAnyCallback: func(input any, toolUseData *uctypes.UIMessageDataToolUse) (any, error) {
+			parsed, err := parseCreateTerminalInput(input)
+			if err != nil {
+				return nil, err
+			}
+
+			ctx, cancelFn := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancelFn()
+
+			meta := waveobj.MetaMapType{
+				"view": "term",
+			}
+			if parsed.Directory != "" {
+				meta["cmd:cwd"] = parsed.Directory
+			}
+			if parsed.Command != "" {
+				meta["cmd"] = parsed.Command
+			}
+			if parsed.Name != "" {
+				meta["frame:title"] = parsed.Name
+			}
+
+			blockDef := &waveobj.BlockDef{
+				Meta: meta,
+			}
+
+			createData := wshrpc.CommandCreateBlockData{
+				TabId:    tabId,
+				BlockDef: blockDef,
+				Focused:  false,
+			}
+
+			rpcClient := wshclient.GetBareRpcClient()
+			oref, err := wshclient.CreateBlockCommand(rpcClient, createData, &wshrpc.RpcOpts{Timeout: 5000})
+			if err != nil {
+				return nil, fmt.Errorf("failed to create terminal: %w", err)
+			}
+
+			blockId := oref.OID
+			widgetId := blockId[:8]
+
+			// Wait briefly for the terminal to start
+			time.Sleep(500 * time.Millisecond)
+			_ = ctx
+
+			return &CreateTerminalToolOutput{
+				WidgetId: widgetId,
+				BlockId:  blockId,
+				Message:  fmt.Sprintf("Terminal created with widget_id %s. Use term_send_input with this widget_id to send commands.", widgetId),
+			}, nil
+		},
+	}
+}

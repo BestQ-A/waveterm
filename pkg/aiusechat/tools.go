@@ -175,6 +175,7 @@ func GenerateTabStateAndTools(ctx context.Context, tabid string, widgetAccess bo
 		tools = append(tools, GetWriteTextFileToolDefinition())
 		tools = append(tools, GetEditTextFileToolDefinition())
 		tools = append(tools, GetDeleteTextFileToolDefinition())
+		tools = append(tools, GetWebFetchToolDefinition())
 		viewTypes := make(map[string]bool)
 		for _, block := range blocks {
 			if block.Meta == nil {
@@ -194,6 +195,7 @@ func GenerateTabStateAndTools(ctx context.Context, tabid string, widgetAccess bo
 			tools = append(tools, GetTermGetScrollbackToolDefinition(tabid))
 			tools = append(tools, GetTermSendInputToolDefinition(tabid, chatOpts.Config.ApprovalMode))
 			tools = append(tools, GetTermSendSignalToolDefinition(tabid, chatOpts.Config.ApprovalMode))
+			tools = append(tools, GetCreateTerminalToolDefinition(tabid, chatOpts.Config.ApprovalMode))
 			// tools = append(tools, GetTermCommandOutputToolDefinition(tabid))
 		}
 		if viewTypes["web"] {

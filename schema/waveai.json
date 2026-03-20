@@ -29,6 +29,16 @@
             "custom"
           ]
         },
+        "ai:providertype": {
+          "type": "string",
+          "enum": [
+            "openai",
+            "openai-compat",
+            "anthropic",
+            "gemini",
+            "azure"
+          ]
+        },
         "ai:apitype": {
           "type": "string",
           "enum": [
@@ -102,6 +112,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "ai:extrabody": {
+          "type": "object"
         },
         "waveai:cloud": {
           "type": "boolean"

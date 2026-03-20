@@ -126,9 +126,10 @@ func getWaveAISettings(premium bool, builderMode bool, rtInfo waveobj.ObjRTInfo,
 		Endpoint:      baseUrl,
 		ProxyURL:      config.ProxyURL,
 		Capabilities:  config.Capabilities,
-		ApprovalMode:  config.ApprovalMode,
-		WaveAIPremium: config.WaveAIPremium,
-		ExtraBody:     config.ExtraBody,
+		ApprovalMode:        config.ApprovalMode,
+		WaveAIPremium:       config.WaveAIPremium,
+		ExtraBody:           config.ExtraBody,
+		SystemPromptOverride: config.SystemPrompt,
 	}
 	if apiToken != "" {
 		opts.APIToken = apiToken
@@ -710,6 +711,9 @@ func WaveAIPostMessageHandler(w http.ResponseWriter, r *http.Request) {
 		BuilderAppId:         req.BuilderAppId,
 	}
 	chatOpts.SystemPrompt = getSystemPrompt(chatOpts.Config.APIType, chatOpts.Config.Model, chatOpts.BuilderId != "", chatOpts.Config.HasCapability(uctypes.AICapabilityTools), chatOpts.WidgetAccess)
+	if chatOpts.Config.SystemPromptOverride != "" {
+		chatOpts.SystemPrompt = append(chatOpts.SystemPrompt, chatOpts.Config.SystemPromptOverride)
+	}
 
 	if req.TabId != "" {
 		chatOpts.TabStateGenerator = func() (string, []uctypes.ToolDefinition, string, error) {

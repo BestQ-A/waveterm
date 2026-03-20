@@ -303,6 +303,7 @@ type AIModeConfigType struct {
 	ApprovalMode       string   `json:"ai:approvalmode,omitempty" jsonschema:"enum=normal,enum=auto-edit,enum=yolo"`
 	SwitchCompat       []string       `json:"ai:switchcompat,omitempty"`
 	ExtraBody          map[string]any `json:"ai:extrabody,omitempty"`
+	SystemPrompt       string         `json:"ai:systemprompt,omitempty"`
 	WaveAICloud        bool           `json:"waveai:cloud,omitempty"`
 	WaveAIPremium      bool           `json:"waveai:premium,omitempty"`
 }

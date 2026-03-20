@@ -20,6 +20,7 @@ declare global {
         "display:icon"?: string;
         "display:description"?: string;
         "ai:provider"?: string;
+        "ai:providertype"?: string;
         "ai:apitype"?: string;
         "ai:model"?: string;
         "ai:thinkinglevel"?: string;
@@ -34,6 +35,7 @@ declare global {
         "ai:capabilities"?: string[];
         "ai:approvalmode"?: string;
         "ai:switchcompat"?: string[];
+        "ai:extrabody"?: {[key: string]: any};
         "waveai:cloud"?: boolean;
         "waveai:premium"?: boolean;
     };

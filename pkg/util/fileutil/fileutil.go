@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/wavetermdev/waveterm/pkg/wavebase"
 )
@@ -259,7 +261,87 @@ type EditResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// normalizeWhitespace collapses all runs of whitespace (including newlines) to a single space and trims.
+func normalizeWhitespace(s string) string {
+	var b strings.Builder
+	inSpace := false
+	for _, r := range s {
+		if unicode.IsSpace(r) {
+			if !inSpace {
+				b.WriteRune(' ')
+				inSpace = true
+			}
+		} else {
+			b.WriteRune(r)
+			inSpace = false
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// trimLines trims leading/trailing whitespace from every line and joins with newline.
+func trimLines(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimSpace(l)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// fuzzyFindAndReplace attempts to find oldStr in content using the given transform applied
+// to both sides, then replaces the matched region in the original content with newStr.
+// Returns (modified, true) on success or (content, false) if not found or ambiguous.
+func fuzzyFindAndReplace(content []byte, oldStr, newStr string, transform func(string) string) ([]byte, bool) {
+	contentStr := string(content)
+	needle := transform(oldStr)
+
+	// Build a sliding-window search over lines of content, matching transformed windows
+	// against the transformed needle. We operate line-by-line to preserve original bytes.
+	oldLines := strings.Split(oldStr, "\n")
+	// strip trailing empty line that comes from a trailing newline in old_str
+	if len(oldLines) > 0 && oldLines[len(oldLines)-1] == "" {
+		oldLines = oldLines[:len(oldLines)-1]
+	}
+	contentLines := strings.Split(contentStr, "\n")
+
+	type match struct{ start, end int } // line indices, end exclusive
+	var matches []match
+
+	for i := 0; i <= len(contentLines)-len(oldLines); i++ {
+		window := strings.Join(contentLines[i:i+len(oldLines)], "\n")
+		if transform(window) == needle {
+			matches = append(matches, match{i, i + len(oldLines)})
+		}
+	}
+
+	if len(matches) != 1 {
+		return content, false
+	}
+
+	m := matches[0]
+
+	// Reconstruct content: build prefix + newStr + suffix using byte offsets.
+	byteOffset := 0
+	for i := 0; i < m.start; i++ {
+		byteOffset += len(contentLines[i]) + 1 // +1 for '\n'
+	}
+	endOffset := byteOffset
+	for i := m.start; i < m.end; i++ {
+		endOffset += len(contentLines[i])
+		if i < m.end-1 {
+			endOffset++ // '\n' between lines
+		}
+	}
+
+	result := string(content[:byteOffset]) + newStr + string(content[endOffset:])
+	return []byte(result), true
+}
+
 // applyEdit applies a single edit to the content and returns the modified content and result.
+// It first tries exact matching, then falls back to three fuzzy strategies in order:
+//  1. Line-trimmed: trim whitespace from each line before comparing
+//  2. Whitespace-normalized: collapse all whitespace runs to single spaces
+//  3. Indentation-flexible: strip all leading whitespace from each line
 func applyEdit(content []byte, edit EditSpec, index int) ([]byte, EditResult) {
 	result := EditResult{
 		Desc: edit.Desc,
@@ -274,12 +356,13 @@ func applyEdit(content []byte, edit EditSpec, index int) ([]byte, EditResult) {
 		return content, result
 	}
 
+	// Strategy 0: exact match
 	oldBytes := []byte(edit.OldStr)
 	count := bytes.Count(content, oldBytes)
-	if count == 0 {
-		result.Applied = false
-		result.Error = "old_str not found in file"
-		return content, result
+	if count == 1 {
+		modifiedContent := bytes.Replace(content, oldBytes, []byte(edit.NewStr), 1)
+		result.Applied = true
+		return modifiedContent, result
 	}
 	if count > 1 {
 		result.Applied = false
@@ -287,9 +370,39 @@ func applyEdit(content []byte, edit EditSpec, index int) ([]byte, EditResult) {
 		return content, result
 	}
 
-	modifiedContent := bytes.Replace(content, oldBytes, []byte(edit.NewStr), 1)
-	result.Applied = true
-	return modifiedContent, result
+	// Exact match failed (count == 0); try fuzzy strategies.
+
+	// Strategy 1: line-trimmed match
+	if modified, ok := fuzzyFindAndReplace(content, edit.OldStr, edit.NewStr, trimLines); ok {
+		log.Printf("edit_text_file: fuzzy match used strategy 1 (line-trimmed) for edit %d (%s)", index+1, result.Desc)
+		result.Applied = true
+		return modified, result
+	}
+
+	// Strategy 2: whitespace-normalized match
+	if modified, ok := fuzzyFindAndReplace(content, edit.OldStr, edit.NewStr, normalizeWhitespace); ok {
+		log.Printf("edit_text_file: fuzzy match used strategy 2 (whitespace-normalized) for edit %d (%s)", index+1, result.Desc)
+		result.Applied = true
+		return modified, result
+	}
+
+	// Strategy 3: indentation-flexible match (strip ALL leading whitespace per line)
+	stripIndent := func(s string) string {
+		lines := strings.Split(s, "\n")
+		for i, l := range lines {
+			lines[i] = strings.TrimLeft(l, " \t")
+		}
+		return strings.Join(lines, "\n")
+	}
+	if modified, ok := fuzzyFindAndReplace(content, edit.OldStr, edit.NewStr, stripIndent); ok {
+		log.Printf("edit_text_file: fuzzy match used strategy 3 (indentation-flexible) for edit %d (%s)", index+1, result.Desc)
+		result.Applied = true
+		return modified, result
+	}
+
+	result.Applied = false
+	result.Error = "old_str not found in file"
+	return content, result
 }
 
 // ApplyEdits applies a series of edits to the given content and returns the modified content.
