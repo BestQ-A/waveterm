@@ -170,6 +170,8 @@ func GenerateTabStateAndTools(ctx context.Context, tabid string, widgetAccess bo
 		}
 		tools = append(tools, GetReadTextFileToolDefinition())
 		tools = append(tools, GetReadDirToolDefinition())
+		tools = append(tools, GetGlobToolDefinition())
+		tools = append(tools, GetGrepToolDefinition())
 		tools = append(tools, GetWriteTextFileToolDefinition())
 		tools = append(tools, GetEditTextFileToolDefinition())
 		tools = append(tools, GetDeleteTextFileToolDefinition())
