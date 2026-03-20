@@ -202,6 +202,7 @@ const (
 	ApprovalTimeout       = "timeout"
 	ApprovalAutoApproved  = "auto-approved"
 	ApprovalCanceled      = "canceled"
+	ApprovalAlwaysAllow   = "always-allow"
 )
 
 // when updating this struct, also modify frontend/app/aipanel/aitypes.ts WaveUIDataTypes.tooluse
@@ -219,7 +220,7 @@ type UIMessageDataToolUse struct {
 }
 
 func (d *UIMessageDataToolUse) IsApproved() bool {
-	return d.Approval == "" || d.Approval == ApprovalUserApproved || d.Approval == ApprovalAutoApproved
+	return d.Approval == "" || d.Approval == ApprovalUserApproved || d.Approval == ApprovalAutoApproved || d.Approval == ApprovalAlwaysAllow
 }
 
 // when updating this struct, also modify frontend/app/aipanel/aitypes.ts WaveUIDataTypes.toolprogress

@@ -193,6 +193,7 @@ func GenerateTabStateAndTools(ctx context.Context, tabid string, widgetAccess bo
 		if viewTypes["term"] {
 			tools = append(tools, GetTermGetScrollbackToolDefinition(tabid))
 			tools = append(tools, GetTermSendInputToolDefinition(tabid, chatOpts.Config.ApprovalMode))
+			tools = append(tools, GetTermSendSignalToolDefinition(tabid, chatOpts.Config.ApprovalMode))
 			// tools = append(tools, GetTermCommandOutputToolDefinition(tabid))
 		}
 		if viewTypes["web"] {

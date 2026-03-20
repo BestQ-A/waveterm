@@ -308,7 +308,12 @@ type TermSendInputToolInput struct {
 	Input      string `json:"input,omitempty"`
 	PressEnter *bool  `json:"press_enter,omitempty"`
 	SpecialKey string `json:"special_key,omitempty"`
+	TimeoutMs  int    `json:"timeout_ms,omitempty"`
 }
+
+const (
+	MaxTimeoutMs = 600000
+)
 
 // Maps special key names to their terminal escape sequences
 var specialKeyMap = map[string]string{
@@ -371,6 +376,13 @@ func parseTermSendInputInput(input any) (*TermSendInputToolInput, error) {
 		}
 	}
 
+	if result.TimeoutMs < 0 {
+		return nil, fmt.Errorf("timeout_ms must be non-negative")
+	}
+	if result.TimeoutMs > MaxTimeoutMs {
+		result.TimeoutMs = MaxTimeoutMs
+	}
+
 	return result, nil
 }
 
@@ -414,7 +426,9 @@ func GetTermSendInputToolDefinition(tabId string, approvalMode string) uctypes.T
 			"Use 'special_key' for interactive TUI programs: 'enter' to confirm, 'escape' to cancel, " +
 			"'up'/'down' to navigate menus, 'ctrl+c' to interrupt, 'tab' to autocomplete. " +
 			"You can combine both: input='1' with press_enter=false sends just '1' to select a menu option. " +
-			"After sending, use term_get_scrollback to check results.",
+			"Use 'timeout_ms' to wait for the command to complete and automatically send SIGINT if it exceeds the timeout (requires shell integration). " +
+			"After sending, use term_get_scrollback to check results. " +
+			"Use term_send_signal to kill runaway processes.",
 		ToolLogName: "term:sendinput",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -434,6 +448,12 @@ func GetTermSendInputToolDefinition(tabId string, approvalMode string) uctypes.T
 				"special_key": map[string]any{
 					"type":        "string",
 					"description": "Send a special key instead of or after input text. Values: enter, escape, tab, backspace, up, down, left, right, ctrl+c, ctrl+d, ctrl+z, ctrl+l, space.",
+				},
+				"timeout_ms": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"maximum":     MaxTimeoutMs,
+					"description": "If set and shell integration is enabled, wait up to this many milliseconds for the command to finish. Sends SIGINT if the timeout is exceeded. 0 = no timeout (default). Max 600000 (10 min).",
 				},
 			},
 			"required":             []string{"widget_id"},
@@ -509,9 +529,178 @@ func GetTermSendInputToolDefinition(tabId string, approvalMode string) uctypes.T
 				return nil, fmt.Errorf("failed to send input to terminal: %w", err)
 			}
 
+			// If timeout_ms is set, poll for command completion and send SIGINT on timeout
+			if parsed.TimeoutMs > 0 {
+				blockORef := waveobj.MakeORef(waveobj.OType_Block, fullBlockId)
+				deadline := time.Now().Add(time.Duration(parsed.TimeoutMs) * time.Millisecond)
+				const pollInterval = 250 * time.Millisecond
+				timedOut := false
+				for time.Now().Before(deadline) {
+					time.Sleep(pollInterval)
+					rtInfo := wstore.GetRTInfo(blockORef)
+					if rtInfo != nil && rtInfo.ShellIntegration && rtInfo.ShellState == "ready" {
+						break
+					}
+				}
+				if time.Now().After(deadline) {
+					timedOut = true
+					// Send SIGINT to interrupt the running process
+					_ = wshclient.ControllerInputCommand(
+						rpcClient,
+						wshrpc.CommandBlockInputData{
+							BlockId: fullBlockId,
+							SigName: "SIGINT",
+						},
+						nil,
+					)
+				}
+				if timedOut {
+					return &TermSendInputToolOutput{
+						Success: false,
+						Message: fmt.Sprintf("Command timed out after %dms in terminal %s. SIGINT sent to interrupt the process. Use term_get_scrollback to check the output.", parsed.TimeoutMs, parsed.WidgetId),
+					}, nil
+				}
+				return &TermSendInputToolOutput{
+					Success: true,
+					Message: fmt.Sprintf("Command completed in terminal %s. Use term_get_scrollback to read the output.", parsed.WidgetId),
+				}, nil
+			}
+
 			return &TermSendInputToolOutput{
 				Success: true,
 				Message: fmt.Sprintf("Input sent to terminal %s. Use term_get_scrollback to read the output.", parsed.WidgetId),
+			}, nil
+		},
+	}
+}
+
+// --- term_send_signal tool ---
+
+type TermSendSignalToolInput struct {
+	WidgetId string `json:"widget_id"`
+	Signal   string `json:"signal"`
+}
+
+type TermSendSignalToolOutput struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+var validSignals = map[string]bool{
+	"SIGINT":  true,
+	"SIGTERM": true,
+	"SIGKILL": true,
+	"SIGHUP":  true,
+	"SIGQUIT": true,
+}
+
+func parseTermSendSignalInput(input any) (*TermSendSignalToolInput, error) {
+	result := &TermSendSignalToolInput{}
+
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+
+	inputBytes, err := json.Marshal(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal input: %w", err)
+	}
+
+	if err := json.Unmarshal(inputBytes, result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal input: %w", err)
+	}
+
+	if result.WidgetId == "" {
+		return nil, fmt.Errorf("widget_id is required")
+	}
+
+	result.Signal = strings.ToUpper(strings.TrimSpace(result.Signal))
+	if result.Signal == "" {
+		result.Signal = "SIGINT"
+	}
+
+	if !validSignals[result.Signal] {
+		validList := make([]string, 0, len(validSignals))
+		for k := range validSignals {
+			validList = append(validList, k)
+		}
+		return nil, fmt.Errorf("unknown signal %q, valid signals: %v", result.Signal, validList)
+	}
+
+	return result, nil
+}
+
+func GetTermSendSignalToolDefinition(tabId string, approvalMode string) uctypes.ToolDefinition {
+	return uctypes.ToolDefinition{
+		Name:        "term_send_signal",
+		DisplayName: "Send Signal to Terminal Process",
+		Description: "Send a Unix signal to the process running in a terminal widget. " +
+			"Use SIGINT (Ctrl+C) to interrupt a running command. " +
+			"Use SIGTERM to request graceful termination. " +
+			"Use SIGKILL to forcefully kill an unresponsive process. " +
+			"Use SIGHUP to signal hangup (reload config for some daemons). " +
+			"Use SIGQUIT to quit with a core dump. " +
+			"This is the primary way to kill runaway or hung processes.",
+		ToolLogName: "term:sendsignal",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"widget_id": map[string]any{
+					"type":        "string",
+					"description": "8-character widget ID of the terminal widget",
+				},
+				"signal": map[string]any{
+					"type":        "string",
+					"description": "Signal to send. Values: SIGINT (interrupt/Ctrl+C), SIGTERM (graceful terminate), SIGKILL (force kill), SIGHUP (hangup), SIGQUIT (quit). Default: SIGINT.",
+					"enum":        []string{"SIGINT", "SIGTERM", "SIGKILL", "SIGHUP", "SIGQUIT"},
+				},
+			},
+			"required":             []string{"widget_id"},
+			"additionalProperties": false,
+		},
+		ToolCallDesc: func(input any, output any, toolUseData *uctypes.UIMessageDataToolUse) string {
+			parsed, err := parseTermSendSignalInput(input)
+			if err != nil {
+				return fmt.Sprintf("error parsing input: %v", err)
+			}
+			return fmt.Sprintf("sending %s to terminal %s", parsed.Signal, parsed.WidgetId)
+		},
+		ToolApproval: func(input any) string {
+			if approvalMode == uctypes.ApprovalModeYolo {
+				return ""
+			}
+			return uctypes.ApprovalNeedsApproval
+		},
+		ToolAnyCallback: func(input any, toolUseData *uctypes.UIMessageDataToolUse) (any, error) {
+			parsed, err := parseTermSendSignalInput(input)
+			if err != nil {
+				return nil, err
+			}
+
+			ctx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelFn()
+
+			fullBlockId, err := wcore.ResolveBlockIdFromPrefix(ctx, tabId, parsed.WidgetId)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve widget: %w", err)
+			}
+
+			rpcClient := wshclient.GetBareRpcClient()
+			err = wshclient.ControllerInputCommand(
+				rpcClient,
+				wshrpc.CommandBlockInputData{
+					BlockId: fullBlockId,
+					SigName: parsed.Signal,
+				},
+				nil,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to send signal to terminal: %w", err)
+			}
+
+			return &TermSendSignalToolOutput{
+				Success: true,
+				Message: fmt.Sprintf("%s sent to terminal %s. Use term_get_scrollback to check the result.", parsed.Signal, parsed.WidgetId),
 			}, nil
 		},
 	}

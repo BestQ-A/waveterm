@@ -85,9 +85,10 @@ interface AIToolApprovalButtonsProps {
     count: number;
     onApprove: () => void;
     onDeny: () => void;
+    onAlwaysAllow: () => void;
 }
 
-const AIToolApprovalButtons = memo(({ count, onApprove, onDeny }: AIToolApprovalButtonsProps) => {
+const AIToolApprovalButtons = memo(({ count, onApprove, onDeny, onAlwaysAllow }: AIToolApprovalButtonsProps) => {
     const approveText = count > 1 ? `Approve All (${count})` : "Approve";
     const denyText = count > 1 ? "Deny All" : "Deny";
 
@@ -104,6 +105,13 @@ const AIToolApprovalButtons = memo(({ count, onApprove, onDeny }: AIToolApproval
                 className="px-3 py-1 border border-gray-600 text-gray-300 hover:border-gray-500 hover:text-white text-sm rounded cursor-pointer transition-colors"
             >
                 {denyText}
+            </button>
+            <button
+                onClick={onAlwaysAllow}
+                className="px-3 py-1 border border-blue-700 text-blue-400 hover:border-blue-500 hover:text-blue-200 text-sm rounded cursor-pointer transition-colors"
+                title="Always allow this tool for this session"
+            >
+                Always Allow
             </button>
         </div>
     );
@@ -165,6 +173,13 @@ const AIToolUseBatch = memo(({ parts, isStreaming }: AIToolUseBatchProps) => {
         });
     };
 
+    const handleAlwaysAllow = () => {
+        setUserApprovalOverride("always-allow");
+        parts.forEach((part) => {
+            WaveAIModel.getInstance().toolUseSendApproval(part.data.toolcallid, "always-allow");
+        });
+    };
+
     return (
         <div className="flex items-start gap-2 p-2 rounded bg-zinc-800/60 border border-zinc-700">
             <div className="flex-1">
@@ -175,7 +190,7 @@ const AIToolUseBatch = memo(({ parts, isStreaming }: AIToolUseBatchProps) => {
                     ))}
                 </div>
                 {effectiveApproval === "needs-approval" && (
-                    <AIToolApprovalButtons count={parts.length} onApprove={handleApprove} onDeny={handleDeny} />
+                    <AIToolApprovalButtons count={parts.length} onApprove={handleApprove} onDeny={handleDeny} onAlwaysAllow={handleAlwaysAllow} />
                 )}
             </div>
         </div>
@@ -223,6 +238,11 @@ const AIToolUse = memo(({ part, isStreaming }: AIToolUseProps) => {
     const handleDeny = () => {
         setUserApprovalOverride("user-denied");
         WaveAIModel.getInstance().toolUseSendApproval(toolData.toolcallid, "user-denied");
+    };
+
+    const handleAlwaysAllow = () => {
+        setUserApprovalOverride("always-allow");
+        WaveAIModel.getInstance().toolUseSendApproval(toolData.toolcallid, "always-allow");
     };
 
     const handleMouseEnter = () => {
@@ -309,7 +329,7 @@ const AIToolUse = memo(({ part, isStreaming }: AIToolUseProps) => {
             )}
             {effectiveApproval === "needs-approval" && (
                 <div className="pl-6">
-                    <AIToolApprovalButtons count={1} onApprove={handleApprove} onDeny={handleDeny} />
+                    <AIToolApprovalButtons count={1} onApprove={handleApprove} onDeny={handleDeny} onAlwaysAllow={handleAlwaysAllow} />
                 </div>
             )}
             {showRestoreModal && <RestoreBackupModal part={part} />}

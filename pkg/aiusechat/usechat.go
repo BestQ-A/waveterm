@@ -259,35 +259,49 @@ func processToolCallInternal(backend UseChatBackend, toolCall uctypes.WaveToolCa
 	}
 
 	if toolCall.ToolUseData.Approval == uctypes.ApprovalNeedsApproval {
-		log.Printf("  waiting for approval...\n")
-		approval, err := WaitForToolApproval(sseHandler.Context(), toolCall.ID)
-		if err != nil || approval == "" {
-			approval = uctypes.ApprovalCanceled
-		}
-		log.Printf("  approval result: %q\n", approval)
-		toolCall.ToolUseData.Approval = approval
-
-		if !toolCall.ToolUseData.IsApproved() {
-			errorMsg := "Tool use denied or timed out"
-			if approval == uctypes.ApprovalUserDenied {
-				errorMsg = "Tool use denied by user"
-			} else if approval == uctypes.ApprovalTimeout {
-				errorMsg = "Tool approval timed out"
-			} else if approval == uctypes.ApprovalCanceled {
-				errorMsg = "Tool approval canceled"
+		// Check session memory: if the user previously chose "always allow" for
+		// this tool name, auto-approve without showing the popup.
+		if IsToolAlwaysAllowed(chatOpts.ChatId, toolCall.Name) {
+			log.Printf("  auto-approved via always-allow memory\n")
+			toolCall.ToolUseData.Approval = uctypes.ApprovalAlwaysAllow
+			_ = sseHandler.AiMsgData("data-tooluse", toolCall.ID, *toolCall.ToolUseData)
+			updateToolUseDataInChat(backend, chatOpts, toolCall.ID, *toolCall.ToolUseData)
+		} else {
+			log.Printf("  waiting for approval...\n")
+			approval, err := WaitForToolApproval(sseHandler.Context(), toolCall.ID)
+			if err != nil || approval == "" {
+				approval = uctypes.ApprovalCanceled
 			}
-			toolCall.ToolUseData.Status = uctypes.ToolUseStatusError
-			toolCall.ToolUseData.ErrorMessage = errorMsg
-			return uctypes.AIToolResult{
-				ToolName:  toolCall.Name,
-				ToolUseID: toolCall.ID,
-				ErrorText: errorMsg,
+			log.Printf("  approval result: %q\n", approval)
+			// If the user chose "always allow", record it in session memory so
+			// future invocations of the same tool are auto-approved.
+			if approval == uctypes.ApprovalAlwaysAllow {
+				SetToolAlwaysAllowed(chatOpts.ChatId, toolCall.Name)
 			}
-		}
+			toolCall.ToolUseData.Approval = approval
 
-		// this still happens here because we need to update the FE to say the tool call was approved
-		_ = sseHandler.AiMsgData("data-tooluse", toolCall.ID, *toolCall.ToolUseData)
-		updateToolUseDataInChat(backend, chatOpts, toolCall.ID, *toolCall.ToolUseData)
+			if !toolCall.ToolUseData.IsApproved() {
+				errorMsg := "Tool use denied or timed out"
+				if approval == uctypes.ApprovalUserDenied {
+					errorMsg = "Tool use denied by user"
+				} else if approval == uctypes.ApprovalTimeout {
+					errorMsg = "Tool approval timed out"
+				} else if approval == uctypes.ApprovalCanceled {
+					errorMsg = "Tool approval canceled"
+				}
+				toolCall.ToolUseData.Status = uctypes.ToolUseStatusError
+				toolCall.ToolUseData.ErrorMessage = errorMsg
+				return uctypes.AIToolResult{
+					ToolName:  toolCall.Name,
+					ToolUseID: toolCall.ID,
+					ErrorText: errorMsg,
+				}
+			}
+
+			// this still happens here because we need to update the FE to say the tool call was approved
+			_ = sseHandler.AiMsgData("data-tooluse", toolCall.ID, *toolCall.ToolUseData)
+			updateToolUseDataInChat(backend, chatOpts, toolCall.ID, *toolCall.ToolUseData)
+		}
 	}
 
 	toolCall.ToolUseData.RunTs = time.Now().UnixMilli()
