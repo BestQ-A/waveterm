@@ -299,6 +299,7 @@ type AIModeConfigType struct {
 	AzureResourceName  string   `json:"ai:azureresourcename,omitempty"`
 	AzureDeployment    string   `json:"ai:azuredeployment,omitempty"`
 	Capabilities       []string `json:"ai:capabilities,omitempty" jsonschema:"enum=pdfs,enum=images,enum=tools"`
+	ApprovalMode       string   `json:"ai:approvalmode,omitempty" jsonschema:"enum=normal,enum=auto-edit,enum=yolo"`
 	SwitchCompat       []string `json:"ai:switchcompat,omitempty"`
 	WaveAICloud        bool     `json:"waveai:cloud,omitempty"`
 	WaveAIPremium      bool     `json:"waveai:premium,omitempty"`

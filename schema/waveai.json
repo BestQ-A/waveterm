@@ -89,6 +89,14 @@
           },
           "type": "array"
         },
+        "ai:approvalmode": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "auto-edit",
+            "yolo"
+          ]
+        },
         "ai:switchcompat": {
           "items": {
             "type": "string"

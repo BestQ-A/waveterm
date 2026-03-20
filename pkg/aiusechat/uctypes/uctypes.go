@@ -181,6 +181,10 @@ const (
 )
 
 const (
+	ApprovalModeNormal   = "normal"
+	ApprovalModeAutoEdit = "auto-edit"
+	ApprovalModeYolo     = "yolo"
+
 	ApprovalNeedsApproval = "needs-approval"
 	ApprovalUserApproved  = "user-approved"
 	ApprovalUserDenied    = "user-denied"
@@ -258,6 +262,7 @@ type AIOptsType struct {
 	APIVersion    string   `json:"apiversion,omitempty"`
 	Endpoint      string   `json:"endpoint,omitempty"`
 	ProxyURL      string   `json:"proxyurl,omitempty"`
+	ApprovalMode  string   `json:"approvalmode,omitempty"` // "normal", "auto-edit", "yolo"
 	MaxTokens     int      `json:"maxtokens,omitempty"`
 	TimeoutMs     int      `json:"timeoutms,omitempty"`
 	ThinkingLevel string   `json:"thinkinglevel,omitempty"` // ThinkingLevelLow, ThinkingLevelMedium, or ThinkingLevelHigh

@@ -32,6 +32,7 @@ declare global {
         "ai:azureresourcename"?: string;
         "ai:azuredeployment"?: string;
         "ai:capabilities"?: string[];
+        "ai:approvalmode"?: string;
         "ai:switchcompat"?: string[];
         "waveai:cloud"?: boolean;
         "waveai:premium"?: boolean;

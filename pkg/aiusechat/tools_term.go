@@ -5,6 +5,7 @@ package aiusechat
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -296,6 +297,222 @@ func GetTermCommandOutputToolDefinition(tabId string) uctypes.ToolDefinition {
 				return nil, fmt.Errorf("failed to get command output: %w", err)
 			}
 			return output, nil
+		},
+	}
+}
+
+// --- term_send_input tool ---
+
+type TermSendInputToolInput struct {
+	WidgetId   string `json:"widget_id"`
+	Input      string `json:"input,omitempty"`
+	PressEnter *bool  `json:"press_enter,omitempty"`
+	SpecialKey string `json:"special_key,omitempty"`
+}
+
+// Maps special key names to their terminal escape sequences
+var specialKeyMap = map[string]string{
+	"enter":     "\r",
+	"escape":    "\x1b",
+	"tab":       "\t",
+	"backspace": "\x7f",
+	"up":        "\x1b[A",
+	"down":      "\x1b[B",
+	"right":     "\x1b[C",
+	"left":      "\x1b[D",
+	"ctrl+c":    "\x03",
+	"ctrl+d":    "\x04",
+	"ctrl+z":    "\x1a",
+	"ctrl+l":    "\x0c",
+	"space":     " ",
+}
+
+type TermSendInputToolOutput struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+func parseTermSendInputInput(input any) (*TermSendInputToolInput, error) {
+	result := &TermSendInputToolInput{}
+
+	if input == nil {
+		return nil, fmt.Errorf("input is required")
+	}
+
+	inputBytes, err := json.Marshal(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal input: %w", err)
+	}
+
+	if err := json.Unmarshal(inputBytes, result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal input: %w", err)
+	}
+
+	if result.WidgetId == "" {
+		return nil, fmt.Errorf("widget_id is required")
+	}
+
+	result.Input = strings.TrimSpace(result.Input)
+	result.SpecialKey = strings.TrimSpace(strings.ToLower(result.SpecialKey))
+
+	// Must provide at least input text or a special key
+	if result.Input == "" && result.SpecialKey == "" {
+		return nil, fmt.Errorf("must provide either 'input' (command text) or 'special_key' (enter, escape, up, down, etc.)")
+	}
+
+	// Validate special_key if provided
+	if result.SpecialKey != "" {
+		if _, ok := specialKeyMap[result.SpecialKey]; !ok {
+			validKeys := make([]string, 0, len(specialKeyMap))
+			for k := range specialKeyMap {
+				validKeys = append(validKeys, k)
+			}
+			return nil, fmt.Errorf("unknown special_key %q, valid keys: %v", result.SpecialKey, validKeys)
+		}
+	}
+
+	return result, nil
+}
+
+func verifyTermSendInputInput(tabId string) func(any, *uctypes.UIMessageDataToolUse) error {
+	return func(input any, toolUseData *uctypes.UIMessageDataToolUse) error {
+		parsed, err := parseTermSendInputInput(input)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelFn()
+
+		fullBlockId, err := wcore.ResolveBlockIdFromPrefix(ctx, tabId, parsed.WidgetId)
+		if err != nil {
+			return fmt.Errorf("failed to resolve widget: %w", err)
+		}
+
+		block, err := wstore.DBGet[*waveobj.Block](ctx, fullBlockId)
+		if err != nil {
+			return fmt.Errorf("failed to get block: %w", err)
+		}
+		if block == nil || block.Meta == nil {
+			return fmt.Errorf("block not found")
+		}
+		viewType, _ := block.Meta["view"].(string)
+		if viewType != "term" {
+			return fmt.Errorf("widget %s is not a terminal (type: %s)", parsed.WidgetId, viewType)
+		}
+
+		return nil
+	}
+}
+
+func GetTermSendInputToolDefinition(tabId string, approvalMode string) uctypes.ToolDefinition {
+	return uctypes.ToolDefinition{
+		Name:        "term_send_input",
+		DisplayName: "Send Terminal Input",
+		Description: "Send text input or special keys to a terminal widget via its PTY. " +
+			"Use 'input' for command text (Enter is appended by default via press_enter=true). " +
+			"Use 'special_key' for interactive TUI programs: 'enter' to confirm, 'escape' to cancel, " +
+			"'up'/'down' to navigate menus, 'ctrl+c' to interrupt, 'tab' to autocomplete. " +
+			"You can combine both: input='1' with press_enter=false sends just '1' to select a menu option. " +
+			"After sending, use term_get_scrollback to check results.",
+		ToolLogName: "term:sendinput",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"widget_id": map[string]any{
+					"type":        "string",
+					"description": "8-character widget ID of the terminal widget",
+				},
+				"input": map[string]any{
+					"type":        "string",
+					"description": "Command text to send. Enter is appended automatically unless press_enter is false.",
+				},
+				"press_enter": map[string]any{
+					"type":        "boolean",
+					"description": "Append Enter (\\r) after input text (default: true). Set false for typing without executing.",
+				},
+				"special_key": map[string]any{
+					"type":        "string",
+					"description": "Send a special key instead of or after input text. Values: enter, escape, tab, backspace, up, down, left, right, ctrl+c, ctrl+d, ctrl+z, ctrl+l, space.",
+				},
+			},
+			"required":             []string{"widget_id"},
+			"additionalProperties": false,
+		},
+		ToolCallDesc: func(input any, output any, toolUseData *uctypes.UIMessageDataToolUse) string {
+			parsed, err := parseTermSendInputInput(input)
+			if err != nil {
+				return fmt.Sprintf("error parsing input: %v", err)
+			}
+			if parsed.SpecialKey != "" && parsed.Input == "" {
+				return fmt.Sprintf("sending key [%s] to terminal %s", parsed.SpecialKey, parsed.WidgetId)
+			}
+			inputStr := parsed.Input
+			if len(inputStr) > 40 {
+				inputStr = inputStr[:37] + "..."
+			}
+			if parsed.SpecialKey != "" {
+				return fmt.Sprintf("sending %q + [%s] to terminal %s", inputStr, parsed.SpecialKey, parsed.WidgetId)
+			}
+			return fmt.Sprintf("sending input to terminal %s: %q", parsed.WidgetId, inputStr)
+		},
+		ToolApproval: func(input any) string {
+			if approvalMode == uctypes.ApprovalModeYolo {
+				return ""
+			}
+			return uctypes.ApprovalNeedsApproval
+		},
+		ToolVerifyInput: verifyTermSendInputInput(tabId),
+		ToolAnyCallback: func(input any, toolUseData *uctypes.UIMessageDataToolUse) (any, error) {
+			parsed, err := parseTermSendInputInput(input)
+			if err != nil {
+				return nil, err
+			}
+
+			ctx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelFn()
+
+			fullBlockId, err := wcore.ResolveBlockIdFromPrefix(ctx, tabId, parsed.WidgetId)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve widget: %w", err)
+			}
+
+			var inputText string
+			if parsed.Input != "" {
+				inputText = parsed.Input
+				pressEnter := true
+				if parsed.PressEnter != nil {
+					pressEnter = *parsed.PressEnter
+				}
+				if pressEnter {
+					inputText += "\r"
+				}
+			}
+			if parsed.SpecialKey != "" {
+				if seq, ok := specialKeyMap[parsed.SpecialKey]; ok {
+					inputText += seq
+				}
+			}
+
+			inputData64 := base64.StdEncoding.EncodeToString([]byte(inputText))
+
+			rpcClient := wshclient.GetBareRpcClient()
+			err = wshclient.ControllerInputCommand(
+				rpcClient,
+				wshrpc.CommandBlockInputData{
+					BlockId:     fullBlockId,
+					InputData64: inputData64,
+				},
+				nil,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to send input to terminal: %w", err)
+			}
+
+			return &TermSendInputToolOutput{
+				Success: true,
+				Message: fmt.Sprintf("Input sent to terminal %s. Use term_get_scrollback to read the output.", parsed.WidgetId),
+			}, nil
 		},
 	}
 }

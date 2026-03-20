@@ -133,17 +133,28 @@ type OpenAIRequest struct {
 	TopLogprobs        int                 `json:"top_logprobs,omitempty"`
 	TopP               float64             `json:"top_p,omitempty"`
 	Truncation         string              `json:"truncation,omitempty"` // "auto", "disabled"
+	ReasoningSplit     *bool               `json:"reasoning_split,omitempty"` // MiniMax: separate thinking from content
 }
 
+// OpenAI Responses API format (flat)
 type OpenAIRequestTool struct {
 	Type        string `json:"type"`
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
 	Parameters  any    `json:"parameters,omitempty"`
 	Strict      bool   `json:"strict,omitempty"`
+	// Chat Completions API format (nested under "function")
+	Function *OpenAIRequestToolFunction `json:"function,omitempty"`
 }
 
-// ConvertToolDefinitionToOpenAI converts a generic ToolDefinition to OpenAI format
+type OpenAIRequestToolFunction struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Parameters  any    `json:"parameters,omitempty"`
+	Strict      bool   `json:"strict,omitempty"`
+}
+
+// ConvertToolDefinitionToOpenAI converts for Responses API (flat format)
 func ConvertToolDefinitionToOpenAI(tool uctypes.ToolDefinition) OpenAIRequestTool {
 	return OpenAIRequestTool{
 		Name:        tool.Name,
@@ -151,6 +162,19 @@ func ConvertToolDefinitionToOpenAI(tool uctypes.ToolDefinition) OpenAIRequestToo
 		Parameters:  tool.InputSchema,
 		Strict:      tool.Strict,
 		Type:        "function",
+	}
+}
+
+// ConvertToolDefinitionToOpenAIChat converts for Chat Completions API (nested format)
+func ConvertToolDefinitionToOpenAIChat(tool uctypes.ToolDefinition) OpenAIRequestTool {
+	return OpenAIRequestTool{
+		Type: "function",
+		Function: &OpenAIRequestToolFunction{
+			Name:        tool.Name,
+			Description: tool.Description,
+			Parameters:  tool.InputSchema,
+			Strict:      tool.Strict,
+		},
 	}
 }
 
@@ -251,16 +275,21 @@ func buildOpenAIHTTPRequest(ctx context.Context, inputs []any, chatOpts uctypes.
 		reqBody.Instructions = strings.Join(chatOpts.SystemPrompt, "\n")
 	}
 
-	// Add tools if provided
+	// Add tools if provided — use correct format based on API type
+	isChatAPI := opts.APIType == uctypes.APIType_OpenAIChat
+	convertTool := ConvertToolDefinitionToOpenAI
+	if isChatAPI {
+		convertTool = ConvertToolDefinitionToOpenAIChat
+	}
 	if len(chatOpts.Tools) > 0 {
 		tools := make([]OpenAIRequestTool, len(chatOpts.Tools))
 		for i, tool := range chatOpts.Tools {
-			tools[i] = ConvertToolDefinitionToOpenAI(tool)
+			tools[i] = convertTool(tool)
 		}
 		reqBody.Tools = tools
 	}
 	for _, tool := range chatOpts.TabTools {
-		convertedTool := ConvertToolDefinitionToOpenAI(tool)
+		convertedTool := convertTool(tool)
 		reqBody.Tools = append(reqBody.Tools, convertedTool)
 	}
 
@@ -280,6 +309,12 @@ func buildOpenAIHTTPRequest(ctx context.Context, inputs []any, chatOpts uctypes.
 		if opts.Model == "gpt-5" || opts.Model == "gpt-5.1" {
 			reqBody.Reasoning.Summary = "auto"
 		}
+	}
+
+	// MiniMax-compatible reasoning: set reasoning_split for MiniMax models
+	if strings.Contains(strings.ToLower(opts.Model), "minimax") {
+		t := true
+		reqBody.ReasoningSplit = &t
 	}
 
 	debugPrintReq(reqBody, endpoint)

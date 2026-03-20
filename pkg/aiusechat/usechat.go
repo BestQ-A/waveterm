@@ -125,6 +125,7 @@ func getWaveAISettings(premium bool, builderMode bool, rtInfo waveobj.ObjRTInfo,
 		Endpoint:      baseUrl,
 		ProxyURL:      config.ProxyURL,
 		Capabilities:  config.Capabilities,
+		ApprovalMode:  config.ApprovalMode,
 		WaveAIPremium: config.WaveAIPremium,
 	}
 	if apiToken != "" {

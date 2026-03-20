@@ -132,6 +132,33 @@ export const AIPanelInput = memo(({ onSubmit, status, model }: AIPanelInputProps
         }
     };
 
+    const handlePaste = useCallback(
+        async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+            const items = Array.from(e.clipboardData.items);
+            const imageItems = items.filter((item) => item.type.startsWith("image/"));
+            if (imageItems.length === 0) {
+                return;
+            }
+            e.preventDefault();
+            for (const item of imageItems) {
+                const file = item.getAsFile();
+                if (!file) {
+                    continue;
+                }
+                // Give pasted images a meaningful name based on MIME type
+                const ext = item.type.split("/")[1] ?? "png";
+                const namedFile = new File([file], `pasted-image.${ext}`, { type: item.type });
+                const sizeError = validateFileSize(namedFile);
+                if (sizeError) {
+                    model.setError(formatFileSizeError(sizeError));
+                    return;
+                }
+                await model.addFile(namedFile);
+            }
+        },
+        [model]
+    );
+
     return (
         <div className={cn("border-t", isFocused ? "border-accent/50" : "border-gray-600")}>
             <input
@@ -151,6 +178,7 @@ export const AIPanelInput = memo(({ onSubmit, status, model }: AIPanelInputProps
                         onKeyDown={handleKeyDown}
                         onFocus={handleFocus}
                         onBlur={handleBlur}
+                        onPaste={handlePaste}
                         placeholder={placeholder}
                         className={cn(
                             "w-full  text-white px-2 py-2 pr-5 focus:outline-none resize-none overflow-auto bg-zinc-800/50"
