@@ -4,11 +4,45 @@
 package openai
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/wavetermdev/waveterm/pkg/util/utilfn"
 )
+
+// mergeExtraBody merges extra key/value pairs from extraBody into the JSON encoding of reqBody.
+// It returns the merged JSON bytes in a buffer. Unknown keys from extraBody are added; known keys
+// already set in reqBody are NOT overwritten (reqBody takes precedence).
+func mergeExtraBody(reqBody *OpenAIRequest, extraBody map[string]any) (bytes.Buffer, error) {
+	// Marshal the struct first
+	structBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return bytes.Buffer{}, fmt.Errorf("marshal reqBody: %w", err)
+	}
+
+	// Unmarshal into a map so we can merge
+	var merged map[string]any
+	if err := json.Unmarshal(structBytes, &merged); err != nil {
+		return bytes.Buffer{}, fmt.Errorf("unmarshal reqBody to map: %w", err)
+	}
+
+	// Add extra fields; do NOT overwrite existing keys (struct takes precedence)
+	for k, v := range extraBody {
+		if _, exists := merged[k]; !exists {
+			merged[k] = v
+		}
+	}
+
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(merged); err != nil {
+		return bytes.Buffer{}, fmt.Errorf("encode merged body: %w", err)
+	}
+	return buf, nil
+}
 
 func debugPrintInput(idx int, input any) {
 	switch v := input.(type) {

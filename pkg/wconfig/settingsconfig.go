@@ -286,8 +286,9 @@ type AIModeConfigType struct {
 	DisplayOrder       float64  `json:"display:order,omitempty"`
 	DisplayIcon        string   `json:"display:icon,omitempty"`
 	DisplayDescription string   `json:"display:description,omitempty"`
-	Provider           string   `json:"ai:provider,omitempty" jsonschema:"enum=wave,enum=google,enum=groq,enum=openrouter,enum=nanogpt,enum=openai,enum=azure,enum=azure-legacy,enum=custom"`
-	APIType            string   `json:"ai:apitype,omitempty" jsonschema:"enum=google-gemini,enum=openai-responses,enum=openai-chat"`
+	Provider           string         `json:"ai:provider,omitempty" jsonschema:"enum=wave,enum=google,enum=groq,enum=openrouter,enum=nanogpt,enum=openai,enum=azure,enum=azure-legacy,enum=custom"`
+	ProviderType       string         `json:"ai:providertype,omitempty" jsonschema:"enum=openai,enum=openai-compat,enum=anthropic,enum=gemini,enum=azure"`
+	APIType            string         `json:"ai:apitype,omitempty" jsonschema:"enum=google-gemini,enum=openai-responses,enum=openai-chat"`
 	Model              string   `json:"ai:model,omitempty"`
 	ThinkingLevel      string   `json:"ai:thinkinglevel,omitempty" jsonschema:"enum=low,enum=medium,enum=high"`
 	Verbosity          string   `json:"ai:verbosity,omitempty" jsonschema:"enum=low,enum=medium,enum=high,description=Text verbosity level (OpenAI Responses API only)"`
@@ -300,9 +301,10 @@ type AIModeConfigType struct {
 	AzureDeployment    string   `json:"ai:azuredeployment,omitempty"`
 	Capabilities       []string `json:"ai:capabilities,omitempty" jsonschema:"enum=pdfs,enum=images,enum=tools"`
 	ApprovalMode       string   `json:"ai:approvalmode,omitempty" jsonschema:"enum=normal,enum=auto-edit,enum=yolo"`
-	SwitchCompat       []string `json:"ai:switchcompat,omitempty"`
-	WaveAICloud        bool     `json:"waveai:cloud,omitempty"`
-	WaveAIPremium      bool     `json:"waveai:premium,omitempty"`
+	SwitchCompat       []string       `json:"ai:switchcompat,omitempty"`
+	ExtraBody          map[string]any `json:"ai:extrabody,omitempty"`
+	WaveAICloud        bool           `json:"waveai:cloud,omitempty"`
+	WaveAIPremium      bool           `json:"waveai:premium,omitempty"`
 }
 
 type AIModeConfigUpdate struct {

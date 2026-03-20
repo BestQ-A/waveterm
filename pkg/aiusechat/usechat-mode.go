@@ -58,6 +58,21 @@ func resolveAIMode(requestedMode string, premium bool) (string, *wconfig.AIModeC
 }
 
 func applyProviderDefaults(config *wconfig.AIModeConfigType) {
+	// If ProviderType is set, use it to derive APIType automatically (takes precedence over Provider-based logic).
+	if config.ProviderType != "" && config.APIType == "" {
+		switch config.ProviderType {
+		case uctypes.ProviderType_OpenAICompat:
+			config.APIType = uctypes.APIType_OpenAIChat
+		case uctypes.ProviderType_OpenAI:
+			config.APIType = getOpenAIAPIType(config.Model)
+		case uctypes.ProviderType_Anthropic:
+			config.APIType = uctypes.APIType_AnthropicMessages
+		case uctypes.ProviderType_Gemini:
+			config.APIType = uctypes.APIType_GoogleGemini
+		case uctypes.ProviderType_Azure:
+			config.APIType = getAzureAPIType(config.Model)
+		}
+	}
 	if config.Provider == uctypes.AIProvider_Wave {
 		config.WaveAICloud = true
 		if config.Endpoint == "" {

@@ -116,6 +116,7 @@ func getWaveAISettings(premium bool, builderMode bool, rtInfo waveobj.ObjRTInfo,
 	}
 	opts := &uctypes.AIOptsType{
 		Provider:      config.Provider,
+		ProviderType:  config.ProviderType,
 		APIType:       config.APIType,
 		Model:         config.Model,
 		MaxTokens:     maxTokens,
@@ -127,6 +128,7 @@ func getWaveAISettings(premium bool, builderMode bool, rtInfo waveobj.ObjRTInfo,
 		Capabilities:  config.Capabilities,
 		ApprovalMode:  config.ApprovalMode,
 		WaveAIPremium: config.WaveAIPremium,
+		ExtraBody:     config.ExtraBody,
 	}
 	if apiToken != "" {
 		opts.APIToken = apiToken

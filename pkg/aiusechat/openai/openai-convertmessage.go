@@ -4,6 +4,7 @@
 package openai
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -311,18 +312,27 @@ func buildOpenAIHTTPRequest(ctx context.Context, inputs []any, chatOpts uctypes.
 		}
 	}
 
-	// MiniMax-compatible reasoning: set reasoning_split for MiniMax models
-	if strings.Contains(strings.ToLower(opts.Model), "minimax") {
-		t := true
-		reqBody.ReasoningSplit = &t
-	}
-
 	debugPrintReq(reqBody, endpoint)
 
-	// Encode request body
-	buf, err := aiutil.JsonEncodeRequestBody(reqBody)
-	if err != nil {
-		return nil, err
+	// Encode request body, merging any ExtraBody fields for provider-specific parameters
+	// (e.g. reasoning_split for MiniMax). ExtraBody keys do NOT overwrite struct fields.
+	var (
+		buf    bytes.Buffer
+		encErr error
+	)
+	if len(opts.ExtraBody) > 0 {
+		merged, mergeErr := mergeExtraBody(reqBody, opts.ExtraBody)
+		if mergeErr != nil {
+			log.Printf("openai: failed to merge extrabody, falling back to plain encode: %v", mergeErr)
+			buf, encErr = aiutil.JsonEncodeRequestBody(reqBody)
+		} else {
+			buf = merged
+		}
+	} else {
+		buf, encErr = aiutil.JsonEncodeRequestBody(reqBody)
+	}
+	if encErr != nil {
+		return nil, encErr
 	}
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &buf)

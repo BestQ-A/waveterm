@@ -35,6 +35,17 @@ const (
 	AIProvider_Custom      = "custom"
 )
 
+// ProviderType determines the wire format used to talk to an API endpoint.
+// Unlike ai:provider (which controls Wave's internal routing logic), ProviderType
+// controls which request/response format is used on the wire.
+const (
+	ProviderType_OpenAI       = "openai"
+	ProviderType_OpenAICompat = "openai-compat"
+	ProviderType_Anthropic    = "anthropic"
+	ProviderType_Gemini       = "gemini"
+	ProviderType_Azure        = "azure"
+)
+
 type UseChatRequest struct {
 	Messages []UIMessage `json:"messages"`
 }
@@ -255,21 +266,23 @@ type WaveContinueResponse struct {
 
 // Wave Specific AI opts for configuration
 type AIOptsType struct {
-	Provider      string   `json:"provider,omitempty"`
-	APIType       string   `json:"apitype,omitempty"`
-	Model         string   `json:"model"`
-	APIToken      string   `json:"apitoken"`
-	APIVersion    string   `json:"apiversion,omitempty"`
-	Endpoint      string   `json:"endpoint,omitempty"`
-	ProxyURL      string   `json:"proxyurl,omitempty"`
-	ApprovalMode  string   `json:"approvalmode,omitempty"` // "normal", "auto-edit", "yolo"
-	MaxTokens     int      `json:"maxtokens,omitempty"`
-	TimeoutMs     int      `json:"timeoutms,omitempty"`
-	ThinkingLevel string   `json:"thinkinglevel,omitempty"` // ThinkingLevelLow, ThinkingLevelMedium, or ThinkingLevelHigh
-	Verbosity     string   `json:"verbosity,omitempty"`     // Text verbosity level (OpenAI Responses API only, ignored by other backends)
-	AIMode        string   `json:"aimode,omitempty"`
-	Capabilities  []string `json:"capabilities,omitempty"`
-	WaveAIPremium bool     `json:"waveaipremium,omitempty"`
+	Provider      string         `json:"provider,omitempty"`
+	ProviderType  string         `json:"providertype,omitempty"` // wire format: openai, openai-compat, anthropic, gemini, azure
+	APIType       string         `json:"apitype,omitempty"`
+	Model         string         `json:"model"`
+	APIToken      string         `json:"apitoken"`
+	APIVersion    string         `json:"apiversion,omitempty"`
+	Endpoint      string         `json:"endpoint,omitempty"`
+	ProxyURL      string         `json:"proxyurl,omitempty"`
+	ApprovalMode  string         `json:"approvalmode,omitempty"` // "normal", "auto-edit", "yolo"
+	MaxTokens     int            `json:"maxtokens,omitempty"`
+	TimeoutMs     int            `json:"timeoutms,omitempty"`
+	ThinkingLevel string         `json:"thinkinglevel,omitempty"` // ThinkingLevelLow, ThinkingLevelMedium, or ThinkingLevelHigh
+	Verbosity     string         `json:"verbosity,omitempty"`     // Text verbosity level (OpenAI Responses API only, ignored by other backends)
+	AIMode        string         `json:"aimode,omitempty"`
+	Capabilities  []string       `json:"capabilities,omitempty"`
+	WaveAIPremium bool           `json:"waveaipremium,omitempty"`
+	ExtraBody     map[string]any `json:"extrabody,omitempty"` // arbitrary extra fields merged into the API request body
 }
 
 func (opts AIOptsType) IsWaveProxy() bool {
