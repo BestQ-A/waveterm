@@ -714,6 +714,8 @@ func WaveAIPostMessageHandler(w http.ResponseWriter, r *http.Request) {
 	if chatOpts.Config.SystemPromptOverride != "" {
 		chatOpts.SystemPrompt = append(chatOpts.SystemPrompt, chatOpts.Config.SystemPromptOverride)
 	}
+	// Load opencode-style instruction files (global ~/.wave/AGENTS.md + project AGENTS.md/CLAUDE.md)
+	chatOpts.SystemPrompt = append(chatOpts.SystemPrompt, loadInstructionPrompts(r.Context(), req.TabId)...)
 
 	if req.TabId != "" {
 		chatOpts.TabStateGenerator = func() (string, []uctypes.ToolDefinition, string, error) {
