@@ -784,7 +784,8 @@ func GetCreateTerminalToolDefinition(tabId string, approvalMode string) uctypes.
 			defer cancelFn()
 
 			meta := waveobj.MetaMapType{
-				"view": "term",
+				"view":       "term",
+				"controller": "shell",
 			}
 			if parsed.Directory != "" {
 				meta["cmd:cwd"] = parsed.Directory
